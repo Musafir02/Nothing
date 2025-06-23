@@ -1,0 +1,70 @@
+name: Persistent VPS via Telegram
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"  # Run every 6 hours
+
+env:
+  BOT_TOKEN: 8089763429:AAEhSweDHApGjkANN6XQiyVSZnHKNT9AK9U
+  CHAT_ID: 5497853349
+
+jobs:
+  vps-job:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup SSH and ngrok
+      run: |
+        sudo apt update
+        sudo apt install -y openssh-server curl wget unzip
+
+        # Create user
+        sudo useradd -m -s /bin/bash github
+        echo "github:githubvps" | sudo chpasswd
+        echo "root:githubvps" | sudo chpasswd
+
+        sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+        sudo systemctl restart ssh
+
+    - name: Install and run Ngrok
+      run: |
+        wget -q -O ngrok.zip https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-linux-amd64.zip
+        unzip ngrok.zip
+        sudo mv ngrok /usr/local/bin
+        ngrok config add-authtoken 2yubfg6xRchiFwfklwjiv1DWL5m_3neNX8gDyQH9x2z7cK7b4
+        ngrok tcp 22 & sleep 10
+
+    - name: Fetch Ngrok address
+      id: get-ip
+      run: |
+        tunnel=$(curl -s http://localhost:4040/api/tunnels | grep -oE "tcp://[^\"]+")
+        echo "NGROK_TUNNEL=$tunnel" >> $GITHUB_ENV
+
+    - name: Download previous backup (if exists)
+      run: |
+        mkdir -p /home/github/data-to-backup
+        curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates" | grep -oP '(?<=file_id":")[^"]*' | head -n1 > file_id.txt
+        FILE_ID=$(cat file_id.txt)
+
+        if [ ! -z "$FILE_ID" ]; then
+          FILE_URL=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=$FILE_ID" | grep -oP '(?<=file_path":")[^"]*')
+          wget -q "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_URL}" -O /tmp/data.tar.gz
+          tar -xzf /tmp/data.tar.gz -C /home/github/data-to-backup
+        fi
+
+    - name: Show SSH details
+      run: |
+        echo "==========================="
+        echo "SSH Ready!"
+        echo "Connect with:"
+        echo "ssh github@$(echo $NGROK_TUNNEL | cut -d '/' -f 3 | cut -d ':' -f 1) -p $(echo $NGROK_TUNNEL | cut -d ':' -f 3)"
+        echo "Password: githubvps"
+        echo "==========================="
+
+    - name: Backup before shutdown
+      if: always()
+      run: |
+        tar -czf /tmp/data.tar.gz -C /home/github/data-to-backup .
+        curl -F chat_id=${CHAT_ID} -F document=@/tmp/data.tar.gz https://api.telegram.org/bot${BOT_TOKEN}/sendDocument
