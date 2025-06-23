@@ -3,62 +3,62 @@ name: VPS
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # Every 6 hours
+    - cron: '0 */6 * * *'
 
 jobs:
-  vps:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
-
     steps:
-      - name: Pre-run setup and install tools
-        run: |
-          sudo apt update && sudo apt install -y git nano htop python3 python3-pip neofetch curl
-          echo "Tools installed: git, nano, htop, python3, pip, neofetch"
 
-      - name: Setup and start tmate
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: false
+    - name: Set up environment
+      run: |
+        sudo apt update && sudo apt install -y git nano htop python3 python3-pip neofetch curl wget tar unzip
 
-      - name: Notify Telegram (VPS Ready)
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          TMATE_URL=$(tmate show-messages | grep -m1 'ssh ')
-          WEB_URL=$(tmate show-messages | grep -m1 'https://')
-          MSG="✅ VPS is ready!\n\n🔗 SSH: \`$TMATE_URL\`\n🌐 Web: $WEB_URL\n\n🧠 Tools: git, nano, htop, python3, pip, neofetch"
-          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
-            -d chat_id=$CHAT_ID \
-            -d text="$MSG" \
-            -d parse_mode=Markdown
+    - name: Install Cloudflare Tunnel
+      run: |
+        curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+        chmod +x cloudflared
+        sudo mv cloudflared /usr/local/bin/
 
-      - name: Restore backup from Telegram
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          mkdir -p /home/runner/data-to-backup
-          curl -s -o /tmp/backup.tar.gz "https://api.telegram.org/file/bot${BOT_TOKEN}/$(curl -s https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=$(curl -s https://api.telegram.org/bot${BOT_TOKEN}/getUpdates | jq -r '.result[-1].message.document.file_id') | jq -r '.result.file_path')"
-          tar -xzf /tmp/backup.tar.gz -C /home/runner/data-to-backup || echo "No previous backup."
+    - name: Start Cloudflare Tunnel
+      run: |
+        mkdir -p ~/.cloudflared
+        echo "tunnel: github-vps" > ~/.cloudflared/config.yml
+        echo "credentials-file: /home/runner/.cloudflared/creds.json" >> ~/.cloudflared/config.yml
+        curl -s -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+             -o /home/runner/.cloudflared/creds.json \
+             https://your-endpoint/creds/github-vps.json
+        cloudflared tunnel --config ~/.cloudflared/config.yml run &
+        sleep 10
 
-      - name: Backup to Telegram before shutdown
-        if: always()
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          tar -czf /tmp/data.tar.gz -C /home/runner/data-to-backup .
-          curl -s -F chat_id=$CHAT_ID -F document=@/tmp/data.tar.gz https://api.telegram.org/bot$BOT_TOKEN/sendDocument
+    - name: Print connection link
+      run: echo "✅ VPS started via Cloudflare Tunnel! Check your dashboard or domain."
 
-      - name: Notify Telegram (Backup Done)
-        if: always()
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
-            -d chat_id=$CHAT_ID \
-            -d text="📦 Backup complete. VPS will shut down." \
-            -d parse_mode=Markdown
+    - name: Notify Telegram (VPS Ready)
+      run: |
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendMessage" \
+        -d chat_id=${{ secrets.CHAT_ID }} \
+        -d text="🚀 VPS is ready via Cloudflare Tunnel with tools: git, nano, htop, pip, neofetch."
+
+    - name: Restore backup from Telegram
+      run: |
+        mkdir -p /home/github/data-to-backup
+        curl -s -o /tmp/data.tar.gz "https://api.telegram.org/file/bot${{ secrets.BOT_TOKEN }}/backup_path_here"
+        tar -xzf /tmp/data.tar.gz -C /home/github/data-to-backup || echo "No backup found."
+
+    - name: Run your custom commands (optional)
+      run: |
+        echo "🛠️ Add your custom build, clone, or repo steps here"
+
+    - name: Backup to Telegram before shutdown
+      if: always()
+      run: |
+        tar -czf /tmp/data.tar.gz -C /home/github/data-to-backup .
+        curl -s -F document=@/tmp/data.tar.gz "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendDocument?chat_id=${{ secrets.CHAT_ID }}&caption=🧠+VPS+Backup"
+
+    - name: Notify Telegram (Backup Done)
+      if: always()
+      run: |
+        curl -s -X POST "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendMessage" \
+        -d chat_id=${{ secrets.CHAT_ID }} \
+        -d text="✅ VPS session finished, and backup sent to Telegram."
