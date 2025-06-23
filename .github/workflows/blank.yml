@@ -3,7 +3,7 @@ name: VPS over Serveo with Telegram Backup
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 */6 * * *" # Every 6 hours
 
 env:
   BOT_TOKEN: 8089763429:AAEhSweDHApGjkANN6XQiyVSZnHKNT9AK9U
@@ -13,11 +13,13 @@ jobs:
   vps:
     runs-on: ubuntu-latest
     steps:
-    - name: Setup SSH and user
+    - name: Pre-run setup and install tools
       run: |
-        sudo apt update
-        sudo apt install -y openssh-server curl wget
+        sudo apt update && sudo apt upgrade -y
+        sudo apt install -y openssh-server curl wget git htop nano unzip python3 python3-pip net-tools neofetch
 
+    - name: Setup SSH and create user
+      run: |
         sudo useradd -m -s /bin/bash github
         echo "github:githubvps" | sudo chpasswd
         echo "root:githubvps" | sudo chpasswd
@@ -29,12 +31,12 @@ jobs:
 
     - name: Restore backup from Telegram
       run: |
-        mkdir -p /home/github/data-to-backup
+        sudo -u github mkdir -p /home/github/data-to-backup
         FILE_ID=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates" | grep -oP '(?<="file_id":")[^"]+' | head -n 1)
         if [ "$FILE_ID" != "" ]; then
           FILE_PATH=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=$FILE_ID" | grep -oP '(?<="file_path":")[^"]+')
           wget -q "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" -O /tmp/data.tar.gz
-          tar -xzf /tmp/data.tar.gz -C /home/github/data-to-backup
+          sudo -u github tar -xzf /tmp/data.tar.gz -C /home/github/data-to-backup
         fi
 
     - name: Start SSH tunnel with Serveo
@@ -49,11 +51,12 @@ jobs:
         echo "🔗 SSH Command:"
         echo "ssh github@serveo.net -p 22222"
         echo "🔐 Password: githubvps"
-        echo "🗂 Persistent folder: /home/github/data-to-backup"
+        echo "🗂 Folder: /home/github/data-to-backup"
+        echo "🧠 Tools: git, nano, htop, python3, pip, neofetch"
         echo "==============================="
 
     - name: Backup before shutdown
       if: always()
       run: |
-        tar -czf /tmp/data.tar.gz -C /home/github/data-to-backup .
+        sudo -u github tar -czf /tmp/data.tar.gz -C /home/github/data-to-backup .
         curl -F chat_id=${CHAT_ID} -F document=@/tmp/data.tar.gz https://api.telegram.org/bot${BOT_TOKEN}/sendDocument
