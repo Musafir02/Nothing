@@ -29,19 +29,15 @@ jobs:
       run: |
         LINK=$(grep -o 'https://sshx.io/[a-zA-Z0-9]*' $HOME/bot/session.txt | head -n1)
         SSH_CMD=$(grep -o 'ssh [^ ]*@[a-zA-Z0-9.]*' $HOME/bot/session.txt | head -n1)
-        MSG="✅ *VPS is Ready!*
-🔗 [Web Access]($LINK)
-💻 \`$SSH_CMD\`
-🗂 Folder: \$HOME/data-to-backup
-🔧 Tools: git, nano, htop, python3, pip, neofetch"
+        MSG=$(echo -e "✅ *VPS is Ready!*\n🔗 [Web Access]($LINK)\n💻 \`$SSH_CMD\`\n🗂 Folder: \$HOME/data-to-backup\n🔧 Tools: git, nano, htop, python3, pip, neofetch")
         curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-          -d chat_id=$TELEGRAM_CHAT_ID \
-          -d text="$MSG" \
-          -d parse_mode="Markdown"
+        -d chat_id=$TELEGRAM_CHAT_ID \
+        -d text="$MSG" \
+        -d parse_mode="Markdown"
 
     - name: Create Telegram bot
-      run: |
-        echo '
+  run: |
+    cat > $HOME/bot/bot.py <<EOF
 import os, time, requests
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -62,17 +58,17 @@ while True:
                 requests.post(f"{API}/sendDocument", data={"chat_id": CHAT_ID}, files={"document": f})
         elif text == "/restore":
             try:
-                with open(f"{os.getenv(\"HOME\")}/bot/file_id.txt") as f:
+                with open(f"{os.getenv('HOME')}/bot/file_id.txt") as f:
                     fid = f.read().strip()
                 getfile = requests.get(f"{API}/getFile", params={"file_id": fid}).json()
                 url = f"https://api.telegram.org/file/bot{TOKEN}/{getfile['result']['file_path']}"
                 os.system(f"curl -s -o /tmp/data.tar.gz {url} && tar -xzf /tmp/data.tar.gz -C $HOME/data-to-backup")
             except: pass
         elif file_id:
-            with open(f"{os.getenv(\"HOME\")}/bot/file_id.txt", "w") as f:
+            with open(f"{os.getenv('HOME')}/bot/file_id.txt", "w") as f:
                 f.write(file_id)
     time.sleep(5)
-' > $HOME/bot/bot.py
+EOF
 
     - name: Run bot and wait
       env:
