@@ -26,8 +26,8 @@ jobs:
 
       - name: Restore backup from Telegram
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           echo "Restoring from Telegram"
           curl -s -o /tmp/data.tar.gz "https://api.telegram.org/file/bot$TELEGRAM_TOKEN/YOUR_FILE_PATH_HERE"
@@ -35,8 +35,8 @@ jobs:
 
       - name: Notify Telegram (VPS Ready)
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           LINK=$(grep -o 'https://sshx.io/[a-zA-Z0-9]*' /tmp/sshx_link.txt | head -n 1)
           SSH_CMD=$(grep -o 'ssh [^ ]*@[a-zA-Z0-9.]*' /tmp/sshx_link.txt | head -n 1)
@@ -52,8 +52,8 @@ jobs:
       - name: Backup to Telegram before shutdown
         if: always()
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           tar -czf /tmp/data.tar.gz -C $HOME/data-to-backup . || echo "Nothing to backup"
           curl -F document=@/tmp/data.tar.gz \
@@ -62,8 +62,8 @@ jobs:
       - name: Notify Telegram (VPS Shutdown)
         if: always()
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
             -d chat_id="$TELEGRAM_CHAT_ID" \
