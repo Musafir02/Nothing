@@ -1,4 +1,4 @@
-name: Persistent Ngrok VPS with Telegram Backup
+name: VPS over Serveo with Telegram Backup
 
 on:
   workflow_dispatch:
@@ -13,11 +13,10 @@ jobs:
   vps:
     runs-on: ubuntu-latest
     steps:
-
-    - name: Set up SSH access
+    - name: Setup SSH and user
       run: |
         sudo apt update
-        sudo apt install -y openssh-server curl wget unzip
+        sudo apt install -y openssh-server curl wget
 
         sudo useradd -m -s /bin/bash github
         echo "github:githubvps" | sudo chpasswd
@@ -27,22 +26,6 @@ jobs:
         sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
         sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
         sudo systemctl restart ssh
-
-    - name: Install Ngrok and start tunnel
-      run: |
-        wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-linux-amd64.zip -O ngrok.zip
-        unzip ngrok.zip
-        sudo mv ngrok /usr/local/bin
-        ngrok config add-authtoken 2yubfg6xRchiFwfklwjiv1DWL5m_3neNX8gDyQH9x2z7cK7b4
-        ngrok tcp 22 & sleep 8
-
-    - name: Get Ngrok public address
-      id: tunnel
-      run: |
-        tunnel_url=$(curl -s http://127.0.0.1:4040/api/tunnels | grep -o 'tcp://[0-9a-zA-Z\.:\-]*')
-        echo "HOST=$(echo $tunnel_url | cut -d/ -f3 | cut -d: -f1)" >> $GITHUB_ENV
-        echo "PORT=$(echo $tunnel_url | cut -d: -f3)" >> $GITHUB_ENV
-        echo "NGROK_TUNNEL=$tunnel_url" >> $GITHUB_ENV
 
     - name: Restore backup from Telegram
       run: |
@@ -54,17 +37,22 @@ jobs:
           tar -xzf /tmp/data.tar.gz -C /home/github/data-to-backup
         fi
 
-    - name: Print SSH command
+    - name: Start SSH tunnel with Serveo
       run: |
-        echo "======================================"
-        echo "✅ VPS is ready!"
-        echo "👉 SSH command:"
-        echo "ssh github@$HOST -p $PORT"
-        echo "🔐 Password: githubvps"
-        echo "🗂  Persistent folder: /home/github/data-to-backup"
-        echo "======================================"
+        echo "Hold on... setting up tunnel..."
+        ssh -o StrictHostKeyChecking=no -R 22222:localhost:22 serveo.net & sleep 10
 
-    - name: Backup to Telegram before shutdown
+    - name: Show connection info
+      run: |
+        echo "==============================="
+        echo "✅ VPS is ready!"
+        echo "🔗 SSH Command:"
+        echo "ssh github@serveo.net -p 22222"
+        echo "🔐 Password: githubvps"
+        echo "🗂 Persistent folder: /home/github/data-to-backup"
+        echo "==============================="
+
+    - name: Backup before shutdown
       if: always()
       run: |
         tar -czf /tmp/data.tar.gz -C /home/github/data-to-backup .
