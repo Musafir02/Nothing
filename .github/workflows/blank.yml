@@ -1,62 +1,64 @@
-name: VPS over Serveo with Telegram Backup
+name: VPS
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *" # Every 6 hours
-
-env:
-  BOT_TOKEN: 8089763429:AAEhSweDHApGjkANN6XQiyVSZnHKNT9AK9U
-  CHAT_ID: 5497853349
+    - cron: "0 */6 * * *"  # Every 6 hours
 
 jobs:
   vps:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
+
     steps:
-    - name: Pre-run setup and install tools
-      run: |
-        sudo apt update && sudo apt upgrade -y
-        sudo apt install -y openssh-server curl wget git htop nano unzip python3 python3-pip net-tools neofetch
+      - name: Pre-run setup and install tools
+        run: |
+          sudo apt update && sudo apt install -y git nano htop python3 python3-pip neofetch curl
+          echo "Tools installed: git, nano, htop, python3, pip, neofetch"
 
-    - name: Setup SSH and create user
-      run: |
-        sudo useradd -m -s /bin/bash github
-        echo "github:githubvps" | sudo chpasswd
-        echo "root:githubvps" | sudo chpasswd
+      - name: Setup and start tmate
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
 
-        sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-        sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-        sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-        sudo systemctl restart ssh
+      - name: Notify Telegram (VPS Ready)
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          TMATE_URL=$(tmate show-messages | grep -m1 'ssh ')
+          WEB_URL=$(tmate show-messages | grep -m1 'https://')
+          MSG="✅ VPS is ready!\n\n🔗 SSH: \`$TMATE_URL\`\n🌐 Web: $WEB_URL\n\n🧠 Tools: git, nano, htop, python3, pip, neofetch"
+          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
+            -d chat_id=$CHAT_ID \
+            -d text="$MSG" \
+            -d parse_mode=Markdown
 
-    - name: Restore backup from Telegram
-      run: |
-        sudo -u github mkdir -p /home/github/data-to-backup
-        FILE_ID=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates" | grep -oP '(?<="file_id":")[^"]+' | head -n 1)
-        if [ "$FILE_ID" != "" ]; then
-          FILE_PATH=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=$FILE_ID" | grep -oP '(?<="file_path":")[^"]+')
-          wget -q "https://api.telegram.org/file/bot${BOT_TOKEN}/${FILE_PATH}" -O /tmp/data.tar.gz
-          sudo -u github tar -xzf /tmp/data.tar.gz -C /home/github/data-to-backup
-        fi
+      - name: Restore backup from Telegram
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          mkdir -p /home/runner/data-to-backup
+          curl -s -o /tmp/backup.tar.gz "https://api.telegram.org/file/bot${BOT_TOKEN}/$(curl -s https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=$(curl -s https://api.telegram.org/bot${BOT_TOKEN}/getUpdates | jq -r '.result[-1].message.document.file_id') | jq -r '.result.file_path')"
+          tar -xzf /tmp/backup.tar.gz -C /home/runner/data-to-backup || echo "No previous backup."
 
-    - name: Start SSH tunnel with Serveo
-      run: |
-        echo "Hold on... setting up tunnel..."
-        ssh -o StrictHostKeyChecking=no -R 22222:localhost:22 serveo.net & sleep 10
+      - name: Backup to Telegram before shutdown
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          tar -czf /tmp/data.tar.gz -C /home/runner/data-to-backup .
+          curl -s -F chat_id=$CHAT_ID -F document=@/tmp/data.tar.gz https://api.telegram.org/bot$BOT_TOKEN/sendDocument
 
-    - name: Show connection info
-      run: |
-        echo "==============================="
-        echo "✅ VPS is ready!"
-        echo "🔗 SSH Command:"
-        echo "ssh github@serveo.net -p 22222"
-        echo "🔐 Password: githubvps"
-        echo "🗂 Folder: /home/github/data-to-backup"
-        echo "🧠 Tools: git, nano, htop, python3, pip, neofetch"
-        echo "==============================="
-
-    - name: Backup before shutdown
-      if: always()
-      run: |
-        sudo -u github tar -czf /tmp/data.tar.gz -C /home/github/data-to-backup .
-        curl -F chat_id=${CHAT_ID} -F document=@/tmp/data.tar.gz https://api.telegram.org/bot${BOT_TOKEN}/sendDocument
+      - name: Notify Telegram (Backup Done)
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          curl -s -X POST https://api.telegram.org/bot$BOT_TOKEN/sendMessage \
+            -d chat_id=$CHAT_ID \
+            -d text="📦 Backup complete. VPS will shut down." \
+            -d parse_mode=Markdown
