@@ -1,57 +1,51 @@
-name: SSHX Session with Telegram and Tools
+name: Free SSHX with Tools + Backup + Restore
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *' # Auto reruns every 6 hours
 
 jobs:
   sshx:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Run SSHX with Backup + Telegram
-        env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
+      - name: Launch SSHX with Tools, Backup, and Restore
         run: |
-          send_telegram() {
-            curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-              -d chat_id="${CHAT_ID}" \
-              -d parse_mode=Markdown \
-              -d text="$1"
-          }
+          echo "🚀 Starting SSHX session"
 
-          send_telegram "🚀 *GitHub SSHX Session Started!* Initializing setup..."
-
-          echo "⚙️ Launching SSHX session"
           curl -sSf https://sshx.io/get | sh -s run -- bash -c '
-            set -e  # Fail fast inside SSHX script
+            set -e
 
-            echo "🔧 Updating system"
+            echo "🔧 Updating system..."
             apt update && apt upgrade -y
 
-            echo "🛠 Installing tools"
-            apt install -y git curl vim zip tar
+            echo "📦 Installing tools..."
+            apt install -y git curl vim zip unzip
 
-            echo "📁 Creating project directory"
-            mkdir -p /root/my-project
-            cd /root/my-project
+            echo "📁 Preparing project directory"
+            mkdir -p /root/project
+            cd /root/project
 
-            echo "🗃 Backing up files (if any)"
-            if [ "$(ls -A .)" ]; then
-              zip -r /root/backup_$(date +%Y%m%d_%H%M%S).zip . || echo "Backup failed"
-            else
-              echo "No files to backup"
-            fi
-
-            echo "🧪 Simulating restore"
-            BACKUP_FILE=$(ls /root/backup_*.zip 2>/dev/null | tail -n1)
+            echo "📦 Checking for backup to restore..."
+            BACKUP_FILE="/root/last_backup.zip"
             if [ -f "$BACKUP_FILE" ]; then
-              unzip "$BACKUP_FILE" -d /root/restored_files
-              echo "✅ Restored to /root/restored_files"
+              echo "📂 Restoring from backup..."
+              unzip "$BACKUP_FILE" -d .
+              echo "✅ Restore complete."
+            else
+              echo "🕳 No previous backup found."
             fi
 
-            echo "✅ SSHX session setup complete!"
-            bash
-          ' || send_telegram "❌ *SSHX Failed to Start or Crashed.* Check your workflow logs!"
+            echo "🧪 Working area is ready."
+            echo "📌 To test persistence, create files in /root/project"
 
-          send_telegram "✅ *SSHX Session Completed!* Tools installed, backup created/restored."
+            # Optional work block
+            sleep 60
+
+            echo "💾 Saving backup before shutdown..."
+            zip -r /root/last_backup.zip . || echo "⚠️ Backup failed"
+
+            echo "✅ SSHX session complete."
+            bash
+          '
