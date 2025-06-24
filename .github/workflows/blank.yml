@@ -1,4 +1,4 @@
-name: SSHX Session with Tools, Backup, and Telegram
+name: SSHX Session with Telegram and Tools
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Launch SSHX with Setup
+      - name: Run SSHX with Backup + Telegram
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
@@ -16,13 +16,16 @@ jobs:
           send_telegram() {
             curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
               -d chat_id="${CHAT_ID}" \
+              -d parse_mode=Markdown \
               -d text="$1"
           }
 
           send_telegram "🚀 *GitHub SSHX Session Started!* Initializing setup..."
 
-          echo "📦 Installing and launching SSHX"
+          echo "⚙️ Launching SSHX session"
           curl -sSf https://sshx.io/get | sh -s run -- bash -c '
+            set -e  # Fail fast inside SSHX script
+
             echo "🔧 Updating system"
             apt update && apt upgrade -y
 
@@ -33,23 +36,22 @@ jobs:
             mkdir -p /root/my-project
             cd /root/my-project
 
-            echo "🗃 Creating backup of current files (if any)"
+            echo "🗃 Backing up files (if any)"
             if [ "$(ls -A .)" ]; then
               zip -r /root/backup_$(date +%Y%m%d_%H%M%S).zip . || echo "Backup failed"
-              echo "✅ Backup created"
             else
-              echo "📂 No existing files to backup"
+              echo "No files to backup"
             fi
 
-            echo "🧪 Simulating restore (extract if backup exists)"
+            echo "🧪 Simulating restore"
             BACKUP_FILE=$(ls /root/backup_*.zip 2>/dev/null | tail -n1)
             if [ -f "$BACKUP_FILE" ]; then
               unzip "$BACKUP_FILE" -d /root/restored_files
-              echo "✅ Restored previous state to /root/restored_files"
+              echo "✅ Restored to /root/restored_files"
             fi
 
-            echo "🚀 Environment is ready. You can run scripts or test here!"
+            echo "✅ SSHX session setup complete!"
             bash
-          '
+          ' || send_telegram "❌ *SSHX Failed to Start or Crashed.* Check your workflow logs!"
 
-          send_telegram "✅ *SSHX Session Finished!* Backup & tool install completed."
+          send_telegram "✅ *SSHX Session Completed!* Tools installed, backup created/restored."
