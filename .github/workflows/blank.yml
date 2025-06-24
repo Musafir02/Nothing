@@ -1,25 +1,23 @@
-name: SSHX VPS Deploy
+name: VPSAdd commentMore actions
 
+# Controls when the workflow will run
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Connect and Deploy to SSHX VPS
-        env:
-          SSHX_HOST: ${{ secrets.SSHX_HOST }}
-          SSHX_USER: ${{ secrets.SSHX_USER }}
-          SSHX_KEY: ${{ secrets.SSHX_KEY }}
-          PROJECT_DIR: ${{ secrets.PROJECT_DIR }}
+      - name: Run SSHX install script
+        run: curl -sSf https://sshx.io/get | sh -s run
         run: |
           echo "🔐 Setting up SSH key"
           echo "$SSHX_KEY" > sshx_key.pem
